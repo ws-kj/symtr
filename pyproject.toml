@@ -1,0 +1,7 @@
+[project]
+name = "symtr"
+version = "0.1.0"
+dsecription = "Train compact transformer models to solve generalized symbolic plans"
+authors = [{name = "Will Savage", email="wcsavage@mit.edu"}]
+requires-python = ">=3.11"
+dependencies = []
