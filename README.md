@@ -28,4 +28,4 @@ To encourage generalization, these plans will be **anonymized** by converting al
 
 ## Resources
 
-- [Pyperplan Logistics Benchmarks](https://github.com/aibasel/pyperplan/tree/main/benchmarks/logistics)
+- [Pyperplan PDDL Benchmarks](https://github.com/aibasel/pyperplan/tree/main/benchmarks)
