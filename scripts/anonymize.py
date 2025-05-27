@@ -1,5 +1,5 @@
 # Anonymize PDDL domains and problems
-# No typing support!
+# No typing support yet!
 
 import re 
 import json
@@ -20,7 +20,7 @@ def log(args):
 
 def anonymize_domain(filename: str, domain_dir: Path):
     """
-    Generate anonymized PDDL domain and save symbol mapping
+    Generate anonymized PDDL domain
     """
     domain_path = domain_dir / filename
     anon_domain_path = ANON_DIR / domain_dir.name / filename
@@ -74,10 +74,7 @@ def anonymize_domain(filename: str, domain_dir: Path):
 
 def anonymize_task(filename: str, domain_dir: Path):
     """
-    * Load domain conversion symbols
-    * Replace domain symbols
-    * Replace object names
-    * Save task conversion symbols
+    Generate anonymized PDDL problem
     """
     task_path = domain_dir / filename
     anon_task_path = ANON_DIR / domain_dir.name / filename
@@ -141,10 +138,7 @@ def anonymize_task(filename: str, domain_dir: Path):
 
 def anonymize_all():
     """
-    For all folders in data/raw_pddl:
-        convert domain.pddl
-        convert task*.pddl
-    Save in data/anon_pddl
+    Anonymize all .pddl in data/raw_pddl, and save to data/anon_pddl
     """
     try:
         for domain_dir in RAW_DIR.iterdir():
@@ -174,11 +168,52 @@ def anonymize_directory(dir: str):
         print(f"{e}")
         print("No raw PDDL directory? Run ../setup.sh to populate raw PDDL data.")
         
+def restore_file(anon_path: Path, symbol_path: Path):
+    """
+    Restore an anonymized PDDL file from a symbols.json file
+    """
+
+    with open(anon_path, "r") as f:
+        anon_text = f.read()
+
+    # symbols stored as anon -> original
+    with open(symbol_path, "r") as f:
+        symbols = json.load(f)
+
+    # restore original symbols
+    def replace_token(match):
+        token = match.group(0)
+        return symbols.get(token, token)
+    token_pattern = r"[a-zA-Z_?][a-zA-Z0-9_\-]*"
+    restored_text = re.sub(token_pattern, replace_token, anon_text)
+
+    # save restored file
+    restored_path = anon_path.parent / f"{anon_path.stem}_restored.pddl"
+    with open(restored_path, "w") as f:
+        f.write(restored_text)
+
+    return restored_path
+
+def restore_directory(dir_path: Path):
+    """
+    Restore all anon files in dir, assuming they have corresponding symbol table
+    """
+
+    for pddl_file in dir_path.glob("*.pddl"):
+        symbol_file = dir_path / f"{pddl_file.stem}_symbols.json"
+        if not symbol_file.exists():
+            log(f"No symbol map found for {pddl_file.name}, skipping.")
+            continue
+
+        restored_path = restore_file(pddl_file, symbol_file)
+        log(f"Restored: {restored_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--domain", type=str, help="Anonymize specific domain directory")
+    parser.add_argument("--restore", type=str, help="Restore all PDDL files in directory")
 #    parser.add_argument("--task", type=str, help="Anonymize specific task file")
     parser.add_argument("--all", action="store_true", help="Anonymize all raw PDDL")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -190,5 +225,7 @@ if __name__ == "__main__":
         anonymize_all()
     elif args.domain:
         anonymize_directory(args.domain)
+    elif args.restore:
+        restore_directory(Path(args.restore))
     else:
         parser.print_help()
