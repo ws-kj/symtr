@@ -32,21 +32,21 @@ def anonymize_domain(filename: str, domain_dir: Path):
         domain_text = f.read()
     domain_name_match = re.search(r"\(define\s*\(domain\s+([^)]+)\)", domain_text)
     domain_name = domain_name_match.group(1) if domain_name_match else "unknown_domain"
-    symbols[domain_name] = "domain"
+    symbols[domain_name] = "domain_name"
 
     # pass domain_path as dummy task
     try:
-        domain = pddlpy.DomainProblem(domain_path, domain_path).domain
+        dp = pddlpy.DomainProblem(domain_path, domain_path).domain
     except FileNotFoundError as _:
         log("Couldn't open domain file!")
         return
 
     # parse and anonymize PDDL symbols
-    for i, obj in enumerate(domain.objects.keys()):
+    for i, obj in enumerate(dp.objects.keys()):
         symbols[obj] = f"predicate_{i}"
-    for i, op in enumerate(domain.operators.keys()):
+    for i, op in enumerate(dp.operators.keys()):
         symbols[op] = f"action_{i}"
-    for op in domain.operators.values():
+    for op in dp.operators.values():
         for i, var in enumerate(op.variable_list.keys()):
             symbols[var] = f"?variable_{i}"
 
@@ -77,9 +77,64 @@ def anonymize_task(filename: str, domain_dir: Path):
     * Replace object names
     * Save task conversion symbols
     """
-    anon_task_path: str = ANON_DIR / domain_dir.name / filename 
-    symbols_task_path: str = ANON_DIR / domain_dir.name / f"{filename}_symbols.json"
+    task_path = domain_dir / filename
+    anon_task_path = ANON_DIR / domain_dir.name / filename
+    symbols_task_path = ANON_DIR / domain_dir.name / f"{Path(filename).stem}_symbols.json"
+    domain_symbols_path = ANON_DIR / domain_dir.name / f"domain_symbols.json"
 
+    symbols = {}
+
+    # need to manually extract problem name with regex
+    with open(task_path, "r") as f:
+        task_text = f.read()
+    task_name_match = re.search(r"\(define\s*\(problem\s+([^)]+)\)", task_text)
+    task_name = task_name_match.group(1) if task_name_match else "unknown_task"
+    symbols[task_name] = "task_name"
+
+    # load domain symbols
+    try:
+        with open(domain_symbols_path, "r") as f:
+            symbols.update({v: k for k, v in json.load(f).items()})
+    except FileNotFoundError:
+        log(f"Missing domain symbol map: {domain_symbols_path}")
+        return
+
+    # extract task specific object names
+    try:
+        dp = pddlpy.DomainProblem(domain_dir / "domain.pddl", task_path)
+    except FileNotFoundError:
+        log("Couldn't load domain/problem files for task anonymization.")
+        return
+
+    # combine domain + task symbols. ensure mapping is consistent
+    object_symbols = {}
+    # SYMBOLS IS REAL -> FAKE
+    for i, obj in enumerate(dp.worldobjects().keys()):
+        if obj not in symbols.keys():
+            object_symbols[obj] = f"object_{i}"
+        else:
+            log(f"Repeat found from domain: {obj}")
+    symbols.update(object_symbols)
+
+    # replace symbols
+    def replace_token(match):
+        token = match.group(0)
+        return symbols.get(token, token)
+    token_pattern = r"[a-zA-Z_?][a-zA-Z0-9_\-]*"
+    anonymized_text = re.sub(token_pattern, replace_token, task_text)
+
+    # save new PDDL file
+    anon_task_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(anon_task_path, "w") as f:
+        f.write(anonymized_text)
+
+    # flip for ease of decoding later
+    flipped_symbols = {v: k for k, v in symbols.items()}
+    with open(symbols_task_path, "w") as f:
+        json.dump(flipped_symbols, f, indent=2)
+
+    log(symbols)
+    log(f"\nAnonymized task: {task_path}")
     
 
 def anonymize_all(verbose: bool = False):
@@ -95,11 +150,11 @@ def anonymize_all(verbose: bool = False):
             continue
         for domain_file in domain_dir.glob("domain*.pddl"):
             anonymize_domain(domain_file.name, domain_dir)
+
+            for task_file in domain_dir.glob("task*.pddl"):
+                anonymize_task(task_file.name, domain_dir)
+                break
         break
-
-            #for task_file in domain_dir.glob("task*.pddl"):
-
-            #    anonymize_task(task_file.name, domain_dir)
     #except FileNotFoundError as _:
     #    print("No raw PDDL directory! Run ../setup.sh to populate raw PDDL data.")
 
