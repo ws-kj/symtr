@@ -1,4 +1,6 @@
 # Anonymize PDDL domains and problems
+# No typing support!
+
 import re 
 import json
 import pddlpy 
@@ -43,17 +45,17 @@ def anonymize_domain(filename: str, domain_dir: Path):
 
     # parse and anonymize PDDL symbols
     for i, obj in enumerate(dp.objects.keys()):
-        symbols[obj] = f"predicate_{i}"
+        symbols[obj.lower()] = f"predicate_{i}"
     for i, op in enumerate(dp.operators.keys()):
-        symbols[op] = f"action_{i}"
+        symbols[op.lower()] = f"action_{i}"
     for op in dp.operators.values():
         for i, var in enumerate(op.variable_list.keys()):
-            symbols[var] = f"?variable_{i}"
+            symbols[var.lower()] = f"?variable_{i}"
 
     # replace symbols
     def replace_token(match):
         token = match.group(0)
-        return symbols.get(token, token)
+        return symbols.get(token.lower(), token)
     token_pattern = r"[a-zA-Z_?][a-zA-Z0-9_\-]*"
     anonymized_text = re.sub(token_pattern, replace_token, domain_text)
 
@@ -89,7 +91,7 @@ def anonymize_task(filename: str, domain_dir: Path):
         task_text = f.read()
     task_name_match = re.search(r"\(define\s*\(problem\s+([^)]+)\)", task_text)
     task_name = task_name_match.group(1) if task_name_match else "unknown_task"
-    symbols[task_name] = "task_name"
+    symbols[task_name.lower()] = "task_name"
 
     # load domain symbols
     try:
@@ -111,7 +113,7 @@ def anonymize_task(filename: str, domain_dir: Path):
     # SYMBOLS IS REAL -> FAKE
     for i, obj in enumerate(dp.worldobjects().keys()):
         if obj not in symbols.keys():
-            object_symbols[obj] = f"object_{i}"
+            object_symbols[obj.lower()] = f"object_{i}"
         else:
             log(f"Repeat found from domain: {obj}")
     symbols.update(object_symbols)
@@ -119,7 +121,7 @@ def anonymize_task(filename: str, domain_dir: Path):
     # replace symbols
     def replace_token(match):
         token = match.group(0)
-        return symbols.get(token, token)
+        return symbols.get(token.lower(), token)
     token_pattern = r"[a-zA-Z_?][a-zA-Z0-9_\-]*"
     anonymized_text = re.sub(token_pattern, replace_token, task_text)
 
@@ -137,32 +139,46 @@ def anonymize_task(filename: str, domain_dir: Path):
     log(f"\nAnonymized task: {task_path}")
     
 
-def anonymize_all(verbose: bool = False):
+def anonymize_all():
     """
     For all folders in data/raw_pddl:
         convert domain.pddl
         convert task*.pddl
     Save in data/anon_pddl
     """
-    #try:
-    for domain_dir in RAW_DIR.iterdir():
+    try:
+        for domain_dir in RAW_DIR.iterdir():
+            anonymize_directory(str(domain_dir.resolve()))
+
+    except FileNotFoundError as e:
+        print(f"{e}")
+        print("No raw PDDL directory? Run ../setup.sh to populate raw PDDL data.")
+
+def anonymize_directory(dir: str):
+    """
+    Anonymize everything in specific domain directory
+    """
+    try:
+        domain_dir = Path(RAW_DIR / dir)
         if not domain_dir.is_dir():
-            continue
+            print(f"{domain_dir} is not a directory.")
+            return 
+
         for domain_file in domain_dir.glob("domain*.pddl"):
             anonymize_domain(domain_file.name, domain_dir)
 
             for task_file in domain_dir.glob("task*.pddl"):
                 anonymize_task(task_file.name, domain_dir)
-                break
-        break
-    #except FileNotFoundError as _:
-    #    print("No raw PDDL directory! Run ../setup.sh to populate raw PDDL data.")
-
+        
+    except FileNotFoundError as e:
+        print(f"{e}")
+        print("No raw PDDL directory? Run ../setup.sh to populate raw PDDL data.")
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-#    parser.add_argument("--domain", type=str, help="Anonymize specific domain file")
+    parser.add_argument("--domain", type=str, help="Anonymize specific domain directory")
 #    parser.add_argument("--task", type=str, help="Anonymize specific task file")
     parser.add_argument("--all", action="store_true", help="Anonymize all raw PDDL")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -172,5 +188,7 @@ if __name__ == "__main__":
 
     if args.all:
         anonymize_all()
+    elif args.domain:
+        anonymize_directory(args.domain)
     else:
         parser.print_help()
