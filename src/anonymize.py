@@ -21,7 +21,7 @@ def log(args):
 # ensure scoped naming
 def serialize_literals_scoped(literals, var_map):
     out = []
-    for lit in sorted(literals):
+    for lit in literals:
         pred, *args = lit
         args = [var_map.get(arg, arg) for arg in args]
         out.append(serialize_literal(pred, args))
@@ -29,7 +29,7 @@ def serialize_literals_scoped(literals, var_map):
 
 def serialize_literals(literals):
     out = []
-    for pred, *args in sorted(literals):
+    for pred, *args in literals:
         out.append(serialize_literal(pred, args))
     return out
 
@@ -38,10 +38,10 @@ def serialize_literal(pred, args):
 
 def serialize_condition(positive, negative):
     all_conds = []
-    for tup in sorted(positive):
+    for tup in positive:
         pred, *args = tup 
         all_conds.append(serialize_literal(pred, args))
-    for tup in sorted(negative):
+    for tup in negative:
         pred, *args = tup 
         all_conds.append(f"(not {serialize_literal(pred, args)})")
     if not all_conds:
@@ -64,7 +64,7 @@ def emit_anonymous_domain(anon_domain_path: Path, parser: PDDL_Parser, symbols: 
 
     # requirements
     if parser.requirements:
-        reqs = " ".join(f"{req}" for req in sorted(parser.requirements))
+        reqs = " ".join(f"{req}" for req in parser.requirements)
         lines.append(f"  (:requirements {reqs})")
 
     # types
@@ -168,12 +168,12 @@ def anonymize_domain(filename: str, domain_dir: Path):
         type_names.update(children)
 
     type_map = {"object": "object"} # keep base
-    for i, name in enumerate(sorted(type_names)):
+    for i, name in enumerate(type_names):
         if name != "object":
             # keep it backwards for looking when updating parser
             type_map[name] = f"type_{i}"
 
-    symbols.update({v: k for k, v in sorted(type_map.items())})
+    symbols.update({v: k for k, v in type_map.items()})
 
     # update parser internal repr
     new_types = {}
