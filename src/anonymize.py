@@ -100,6 +100,8 @@ def emit_anonymous_domain(anon_domain_path: Path, parser: PDDL_Parser, symbols: 
 
         lines.append("  )")
 
+    lines.append(")")
+
     anon_domain_path.parent.mkdir(parents=True, exist_ok=True)
     with open(anon_domain_path, "w") as f:
         f.write("\n".join(lines))
@@ -177,7 +179,7 @@ def anonymize_domain(filename: str, domain_dir: Path):
         action.parameters = new_params
         new_actions.append(action)
     parser.actions = new_actions
-    breakpoint()
+    
     # save new files
     anon_domain_path.parent.mkdir(parents=True, exist_ok=True)
     emit_anonymous_domain(anon_domain_path, parser, symbols)
@@ -188,29 +190,70 @@ def anonymize_domain(filename: str, domain_dir: Path):
     log(symbols)
     log(f"\nAnonymized domain: {domain_path}")
 
-def anonymize_task(filename: str, domain_dir: Path):
+    return anon_domain_path
+
+def anonymize_task(filename: str, domain_dir: Path, real_domain_path: Path, anon_domain_path: Path):
     """
-    Generate anonymized PDDL problem
+    Generate anonymized PDDL problem using anonymous domain
     """
     task_path = domain_dir / filename
     anon_task_path = ANON_DIR / domain_dir.name / filename
     symbols_task_path = ANON_DIR / domain_dir.name / f"{Path(filename).stem}_symbols.json"
     domain_symbols_path = ANON_DIR / domain_dir.name / f"domain_symbols.json"
 
-    symbols = {}
+    # start with domain symbols
+    with open(domain_symbols_path, "r") as f:
+        symbols = json.load(f)
 
-
-    anonymized_text = ''
-    # save new PDDL file
-    anon_task_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(anon_task_path, "w") as f:
-        f.write(anonymized_text)
-
-    # flip for ease of decoding later
     flipped_symbols = {v: k for k, v in symbols.items()}
-    with open(symbols_task_path, "w") as f:
-        json.dump(flipped_symbols, f, indent=2)
 
+    domain_parser = PDDL_Parser()
+    domain_parser.parse_domain(anon_domain_path)
+
+    parser = PDDL_Parser()
+    # grab raw domain so parser initializes correctly
+    parser.parse_domain(real_domain_path)
+    parser.parse_problem(task_path)
+
+    parser.requirements = domain_parser.requirements
+    parser.domain_name = domain_parser.domain_name
+    parser.predicates = domain_parser.predicates
+    parser.actions = domain_parser.actions 
+    parser.types = domain_parser.types
+
+    symbols["planning_problem"] = parser.problem_name
+    parser.problem_name = "planning_problem"
+
+    # parse objects
+    new_objects = {}
+    for typ, obj_list in parser.objects.items():
+        type_anon = flipped_symbols.get(typ, typ)
+        new_obj_list = []
+        for i, obj in enumerate(obj_list):
+            obj_anon = f"{type_anon}_obj_{i}"
+            symbols[obj_anon] = obj
+            flipped_symbols[obj] = obj_anon
+            new_obj_list.append(obj_anon)
+        new_objects[type_anon] = new_obj_list
+    parser.objects = new_objects 
+
+    # parse initial state 
+    parser.state = frozenset(
+        (flipped_symbols[pred], *[flipped_symbols[arg] for arg in args])
+        for pred, *args in parser.state
+    )
+    breakpoint()
+    # parse goals
+    parser.positive_goals = frozenset(
+        (flipped_symbols[pred], *[flipped_symbols[arg] for arg in args])
+        for pred, *args in parser.positive_goals
+    )
+    parser.negative_goals = frozenset(
+        (flipped_symbols[pred], *[flipped_symbols[arg] for arg in args])
+        for pred, *args in parser.negative_goals
+    )
+
+    breakpoint()
     log(symbols)
     log(f"\nAnonymized task: {task_path}")
     
@@ -238,10 +281,10 @@ def anonymize_directory(dir: str):
             return 
 
         for domain_file in domain_dir.glob("domain*.pddl"):
-            anonymize_domain(domain_file.name, domain_dir)
+            anon_domain_path = anonymize_domain(domain_file.name, domain_dir)
 
             for task_file in domain_dir.glob("task*.pddl"):
-                anonymize_task(task_file.name, domain_dir)
+                anonymize_task(task_file.name, domain_dir, domain_file.resolve(), anon_domain_path)
         
     except FileNotFoundError as e:
         print(f"{e}")
