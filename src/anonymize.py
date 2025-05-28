@@ -18,12 +18,19 @@ def log(args):
     if verbose:
         print(args)
 
-def serialize_literals(literals, var_map):
+# ensure scoped naming
+def serialize_literals_scoped(literals, var_map):
     out = []
     for lit in sorted(literals):
         pred, *args = lit
         args = [var_map.get(arg, arg) for arg in args]
-        out.append(f"({pred} {' '.join(args)})")
+        out.append(serialize_literal(pred, args))
+    return out 
+
+def serialize_literals(literals):
+    out = []
+    for pred, *args in sorted(literals):
+        out.append(serialize_literal(pred, args))
     return out
 
 def serialize_literal(pred, args):
@@ -87,14 +94,14 @@ def emit_anonymous_domain(anon_domain_path: Path, parser: PDDL_Parser, symbols: 
         param_map = {real: anon for anon, real in symbols.items() if anon.startswith(f"?{action.name}_")}
 
         # preconditions
-        pre = serialize_literals(action.positive_preconditions, param_map)
-        neg = serialize_literals(action.negative_preconditions, param_map)
+        pre = serialize_literals_scoped(action.positive_preconditions, param_map)
+        neg = serialize_literals_scoped(action.negative_preconditions, param_map)
         pre_strs = pre + [f"(not {n})" for n in neg]
         lines.append(f"    :precondition {'(and ' + ' '.join(pre_strs) + ')' if len(pre_strs) > 1 else pre_strs[0] if pre_strs else '()'}")
 
         # effects
-        add = serialize_literals(action.add_effects, param_map)
-        delete = serialize_literals(action.del_effects, param_map)
+        add = serialize_literals_scoped(action.add_effects, param_map)
+        delete = serialize_literals_scoped(action.del_effects, param_map)
         eff_strs = add + [f"(not {d})" for d in delete]
         lines.append(f"    :effect {'(and ' + ' '.join(eff_strs) + ')' if len(eff_strs) > 1 else eff_strs[0] if eff_strs else '()'}")
 
@@ -106,6 +113,37 @@ def emit_anonymous_domain(anon_domain_path: Path, parser: PDDL_Parser, symbols: 
     with open(anon_domain_path, "w") as f:
         f.write("\n".join(lines))
 
+def emit_anonymous_task(anon_task_path: Path, parser: PDDL_Parser):
+    lines = []
+    lines.append(f"(define (problem {parser.problem_name})")
+    lines.append(f"  (:domain {parser.domain_name})")
+
+    # objects
+    lines.append("  (:objects")
+    for typ, objs in parser.objects.items():
+        lines.append(f"    {' '.join(objs)} - {typ}")
+    lines.append("  )")
+
+    # initial state 
+    lines.append("  (:init")
+    for pred in serialize_literals(parser.state):
+        lines.append(f"    {pred}")
+    lines.append("  )")
+
+    # goal state 
+    lines.append("  (:goal (and")
+    pos = serialize_literals(parser.positive_goals)
+    neg = serialize_literals(parser.negative_goals)
+    goal_preds = pos + [f"(not {pred})" for pred in neg]
+    for pred in goal_preds:
+        lines.append(f"    {pred}")
+    lines.append("  ))")
+
+    lines.append(")")
+
+    anon_task_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(anon_task_path, "w") as f:
+        f.write("\n".join(lines))
 
 def anonymize_domain(filename: str, domain_dir: Path):
     """
@@ -198,7 +236,7 @@ def anonymize_task(filename: str, domain_dir: Path, real_domain_path: Path, anon
     """
     task_path = domain_dir / filename
     anon_task_path = ANON_DIR / domain_dir.name / filename
-    symbols_task_path = ANON_DIR / domain_dir.name / f"{Path(filename).stem}_symbols.json"
+    symbols_path = ANON_DIR / domain_dir.name / f"{Path(filename).stem}_symbols.json"
     domain_symbols_path = ANON_DIR / domain_dir.name / f"domain_symbols.json"
 
     # start with domain symbols
@@ -242,7 +280,7 @@ def anonymize_task(filename: str, domain_dir: Path, real_domain_path: Path, anon
         (flipped_symbols[pred], *[flipped_symbols[arg] for arg in args])
         for pred, *args in parser.state
     )
-    breakpoint()
+
     # parse goals
     parser.positive_goals = frozenset(
         (flipped_symbols[pred], *[flipped_symbols[arg] for arg in args])
@@ -253,7 +291,13 @@ def anonymize_task(filename: str, domain_dir: Path, real_domain_path: Path, anon
         for pred, *args in parser.negative_goals
     )
 
-    breakpoint()
+    # save new files
+    anon_task_path.parent.mkdir(parents=True, exist_ok=True)
+    emit_anonymous_task(anon_task_path, parser)
+
+    with open(symbols_path, "w") as f:
+        json.dump(symbols, f, indent=2)
+
     log(symbols)
     log(f"\nAnonymized task: {task_path}")
     
