@@ -157,6 +157,7 @@ def anonymize_domain(filename: str, domain_dir: Path):
     # mapping of anonymous symbols -> real
     symbols = {}
     parser = PDDL_Parser()
+
     parser.parse_domain(domain_path)
 
     symbols["planning_domain"] = parser.domain_name
@@ -195,7 +196,10 @@ def anonymize_domain(filename: str, domain_dir: Path):
         for j, (param, typ) in enumerate(param_dict.items()):
             anon_param = f"?{pred_anon}_var{j}"
             symbols[anon_param] = param 
-            new_params[anon_param] = type_map.get(typ, typ)
+            try:
+                new_params[anon_param] = type_map.get(typ, typ)
+            except Exception as e:
+                breakpoint()
 
         new_predicates[pred_anon] = new_params
     parser.predicates = new_predicates
@@ -237,7 +241,7 @@ def anonymize_task(filename: str, domain_dir: Path, real_domain_path: Path, anon
     task_path = domain_dir / filename
     anon_task_path = ANON_DIR / domain_dir.name / filename
     symbols_path = ANON_DIR / domain_dir.name / f"{Path(filename).stem}_symbols.json"
-    domain_symbols_path = ANON_DIR / domain_dir.name / f"domain_symbols.json"
+    domain_symbols_path = ANON_DIR / domain_dir.name / f"{anon_domain_path.stem}_symbols.json"
 
     # start with domain symbols
     with open(domain_symbols_path, "r") as f:
