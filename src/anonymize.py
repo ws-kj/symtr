@@ -1,5 +1,4 @@
 # Anonymize PDDL domains and problems
-# No typing support yet!
 
 import re 
 import json
@@ -19,11 +18,12 @@ def log(args):
         print(args)
 
 # ensure scoped naming
-def serialize_literals_scoped(literals, var_map):
+def serialize_literals_scoped(literals, scoped_map):
     out = []
     for lit in literals:
         pred, *args = lit
-        args = [var_map.get(arg, arg) for arg in args]
+        pred = scoped_map.get(pred, pred)
+        args = [scoped_map.get(arg, arg) for arg in args]
         out.append(serialize_literal(pred, args))
     return out 
 
@@ -90,18 +90,18 @@ def emit_anonymous_domain(anon_domain_path: Path, parser: PDDL_Parser, symbols: 
         else:
             lines.append("    :parameters ()")
 
-        # get scoped parameters
-        param_map = {real: anon for anon, real in symbols.items() if anon.startswith(f"?{action.name}_")}
+        # get scoped parameters and predicates
+        scoped_map = {real: anon for anon, real in symbols.items() if anon.startswith(f"?{action.name}_") or anon.startswith("pred")}
 
         # preconditions
-        pre = serialize_literals_scoped(action.positive_preconditions, param_map)
-        neg = serialize_literals_scoped(action.negative_preconditions, param_map)
+        pre = serialize_literals_scoped(action.positive_preconditions, scoped_map)
+        neg = serialize_literals_scoped(action.negative_preconditions, scoped_map)
         pre_strs = pre + [f"(not {n})" for n in neg]
         lines.append(f"    :precondition {'(and ' + ' '.join(pre_strs) + ')' if len(pre_strs) > 1 else pre_strs[0] if pre_strs else '()'}")
 
         # effects
-        add = serialize_literals_scoped(action.add_effects, param_map)
-        delete = serialize_literals_scoped(action.del_effects, param_map)
+        add = serialize_literals_scoped(action.add_effects, scoped_map)
+        delete = serialize_literals_scoped(action.del_effects, scoped_map)
         eff_strs = add + [f"(not {d})" for d in delete]
         lines.append(f"    :effect {'(and ' + ' '.join(eff_strs) + ')' if len(eff_strs) > 1 else eff_strs[0] if eff_strs else '()'}")
 
